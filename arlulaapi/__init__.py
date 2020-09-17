@@ -7,11 +7,19 @@ import warnings
 import os
 import math
 import pgeocode
+import platform
 # warnings.filterwarnings("ignore")
 
 name = "arlulaapi"
+sdk_version = "1.1.9"
+py_version = sys.version.split(' ')[0]
+os_version = platform.platform()
+def_ua = "archive-sdk " + \
+    sys.version.split(' ')[0] + " python " + py_version + " OS " + os_version
 
 # Object generator that converts returned JSON into a Python object
+
+
 class ArlulaObj(object):
     def __init__(self, d):
         for a, b in d.items():
@@ -25,10 +33,14 @@ class ArlulaObj(object):
         return str(['{}: {}'.format(attr, value) for attr, value in self.__dict__.items()])[1:-1].replace('\'', '')
 
 # Exception when group searching
+
+
 def gsearch_exception(r, e):
     return("request failed")
 
 # Custom Exception Class
+
+
 class ArlulaSessionError(Exception):
     def __init__(self, value):
         self.value = value
@@ -37,26 +49,34 @@ class ArlulaSessionError(Exception):
         return self.value
 
 # Custom Warning Class
+
+
 class ArlulaSessionWarning(Warning):
     pass
 
 # The ArlulaSession code
 # At some point, this should be separated into a diff file
+
+
 class ArlulaSession:
 
-    def __init__(self, key, secret):
+    def __init__(self, key, secret, allow_async=True, user_agent=def_ua):
         # Encode the key and secret
         def atob(x): return x.encode('utf-8')
         self.token = base64.b64encode(atob(
             key + ':' + secret)).decode('utf-8')
         self.header = {
             'Authorization': "Basic "+self.token,
+            'User-Agent': user_agent
         }
         self.baseURL = "https://api.arlula.com"
         self.max_cloud = 100
         # Supplier max bounds on cloud values
         self.max_cloud_vals = {"landsat": 100, "SIIS": 100, "maxar": 100}
         self.validate_creds()
+        self.allow_async = allow_async
+        if self.allow_async:
+            import grequests
 
     # Enables use of `with` keyword
     def __enter__(self):
@@ -72,17 +92,18 @@ class ArlulaSession:
         self.header = None
 
     def set_max_cloud(self, val):
-        if (val<0 or val > 100) :
-            raise ArlulaSessionError("Max cloud value must be between 0 and 100")
+        if (val < 0 or val > 100):
+            raise ArlulaSessionError(
+                "Max cloud value must be between 0 and 100")
         self.max_cloud = val
 
     def get_max_cloud(self):
         return self.max_cloud
 
     def filter(self, r):
-        if r['supplier']=="" :
+        if r['supplier'] == "":
             return False
-        return r['cloud']/self.max_cloud_vals.get(r["supplier"])*100<=self.max_cloud
+        return r['cloud']/self.max_cloud_vals.get(r["supplier"])*100 <= self.max_cloud
 
     def validate_creds(self):
         url = self.baseURL+"/api/test"
@@ -103,12 +124,16 @@ class ArlulaSession:
                north=None,
                south=None,
                east=None,
-               west=None):
+               west=None,
+               params=None):
         url = self.baseURL+"/api/search"
 
-        querystring = {"start": start, "end": end,
-                       "res": res, "lat": lat, "long": long,
-                       "north": north, "south": south, "east": east, "west": west}
+        if params is None:
+            querystring = {"start": start, "end": end,
+                           "res": res, "lat": lat, "long": long,
+                           "north": north, "south": south, "east": east, "west": west}
+        else:
+            querystring = params
 
         querystring = {k: v for k, v in querystring.items()
                        if v is not None or v == 0}
@@ -124,26 +149,31 @@ class ArlulaSession:
     def gsearch(self,
                 params):
         searches = []
-        for p in params:
-            url = self.baseURL+"/api/search"
+        if self.allow_async:
+            for p in params:
+                url = self.baseURL+"/api/search"
 
-            querystring = {"start": p.get('start'), "end": p.get('end'), "res": p.get('res'),
-                           "lat": p.get('lat'), "long": p.get('long'), "north": p.get('north'),
-                           "south": p.get('south'), "east": p.get('east'), "west": p.get('west')}
+                querystring = {k: v for k, v in p.items()
+                               if v is not None or v == 0}
 
-            querystring = {k: v for k, v in querystring.items()
-                           if v is not None or v == 0}
+                headers = self.header
 
-            headers = self.header
+                searches.append(grequests.get(
+                    url, headers=headers, params=querystring))
 
-            searches.append(grequests.get(
-                url, headers=headers, params=querystring))
-
-        response = grequests.map(searches, exception_handler=gsearch_exception)
-        result = []
-        for r in response:
-            result.append([ArlulaObj(x) for x in json.loads(r.text) if self.filter(x)])
-        return result
+            response = grequests.map(
+                searches, exception_handler=gsearch_exception)
+            result = []
+            for r in response:
+                result.append([ArlulaObj(x)
+                               for x in json.loads(r.text) if self.filter(x)])
+            return result
+        else:
+            # Non-async. Just calls 'search' sequentially
+            responses = []
+            for p in params:
+                responses.append(self.search(params=p))
+            return responses
 
     def get_order(self,
                   id=""):
