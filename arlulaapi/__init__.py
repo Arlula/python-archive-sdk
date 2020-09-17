@@ -11,7 +11,7 @@ import platform
 # warnings.filterwarnings("ignore")
 
 name = "arlulaapi"
-sdk_version = "1.1.9"
+sdk_version = "1.2.0"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
