@@ -9,7 +9,7 @@ import pgeocode
 import platform
 
 name = "arlulaapi"
-sdk_version = "1.2.0"
+sdk_version = "1.2.1"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
