@@ -158,9 +158,14 @@ search_result = res[2].data # Melbourne search result
 ```
 
 ## Advanced
-**Turn off async features**
+**Allow async features**
 
-Async features used in gsearch can be turned off when instantiating a session. This will avoid importing gevent. The gsearch functionality will still work, but will make requests synchronously.
+Async features can be turned on at instantiation for better performance in gsearch.
 ```python
-arlula_session = arlulaapi.ArlulaSession(key, secret, allow_async=False)
+arlula_session = arlulaapi.ArlulaSession(key, secret, allow_async=True)
+```
+Note that it is up to the user to monkey-patch with the gevent package, i.e. including the following code at the very top of their python file:
+```python
+from gevent import monkey as curious_george
+curious_george.patch_all(thread=False, select=False)
 ```

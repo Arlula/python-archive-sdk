@@ -57,7 +57,7 @@ class ArlulaSessionWarning(Warning):
 
 class ArlulaSession:
 
-    def __init__(self, key, secret, allow_async=True, user_agent=def_ua):
+    def __init__(self, key, secret, allow_async=False, user_agent=def_ua):
         # Encode the key and secret
         def atob(x): return x.encode('utf-8')
         self.token = base64.b64encode(atob(
@@ -72,8 +72,6 @@ class ArlulaSession:
         self.max_cloud_vals = {"landsat": 100, "SIIS": 100, "maxar": 100}
         self.validate_creds()
         self.allow_async = allow_async
-        if self.allow_async:
-            import grequests
 
     # Enables use of `with` keyword
     def __enter__(self):
@@ -147,6 +145,7 @@ class ArlulaSession:
                 params):
         searches = []
         if self.allow_async:
+            import grequests
             for p in params:
                 url = self.baseURL+"/api/search"
 
