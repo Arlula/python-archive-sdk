@@ -1,4 +1,3 @@
-import grequests
 import base64
 import requests
 import json
@@ -8,7 +7,6 @@ import os
 import math
 import pgeocode
 import platform
-# warnings.filterwarnings("ignore")
 
 name = "arlulaapi"
 sdk_version = "1.2.0"
@@ -55,7 +53,6 @@ class ArlulaSessionWarning(Warning):
     pass
 
 # The ArlulaSession code
-# At some point, this should be separated into a diff file
 
 
 class ArlulaSession:

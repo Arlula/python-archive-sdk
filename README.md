@@ -16,15 +16,13 @@ Instantiate an ArlulaSession object using your API credentials as below. This wi
 ```python
 import arlulaapi
 
-"""using the `with` keyword (recommended)"""
-with arlulaapi.ArlulaSession(key, secret) as arlula_session :
-    # Call required methods
-
-"""explicitly defining the session"""
+"""opening a session"""
 arlula_session = arlulaapi.ArlulaSession(key, secret)
 # Call required methods
-# close() removes your key and secret from the session, if desired
-arlula_session.close()
+
+"""using a context manager"""
+with arlulaapi.ArlulaSession(key, secret) as arlula_session :
+    # Call required methods
 ```
 
 ## Utilities
@@ -157,4 +155,12 @@ res = arlula_session.search_postcode(
 )
 print(res[2].location.name) # prints "Melbourne"
 search_result = res[2].data # Melbourne search result
+```
+
+## Advanced
+**Turn off async features**
+
+Async features used in gsearch can be turned off when instantiating a session. This will avoid importing gevent. The gsearch functionality will still work, but will make requests synchronously.
+```python
+arlula_session = arlulaapi.ArlulaSession(key, secret, allow_async=False)
 ```
