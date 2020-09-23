@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='arlulaapi',
-    version='1.2.0',
+    version='1.2.1',
     author="Adam Hamilton",
     author_email="adamhammo99@gmail.com",
     description="A package to facilitate access to the Arlula Imagery Marketplace API",
