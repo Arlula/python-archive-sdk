@@ -9,7 +9,7 @@ import pgeocode
 import platform
 
 name = "arlulaapi"
-sdk_version = "1.2.0"
+sdk_version = "1.2.2"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
@@ -234,10 +234,13 @@ class ArlulaSession:
     def get_resource(self,
                      id="",
                      filepath="",
-                     suppress=False):
+                     suppress=False,
+                     progress_generator=None):
         if filepath == "":
             raise ArlulaSessionError(
                 "You must specify a filepath for the download")
+        if progress_generator is not None :
+            next(progress_generator)
         with open(filepath, 'wb') as f:
             url = self.baseURL + "/api/order/resource/get"
             querystring = {"id": id}
@@ -263,6 +266,8 @@ class ArlulaSession:
                         sys.stdout.write('\r[{}{}]{:.2%}'.format(
                             '█' * done, '.' * (50-done), downloaded/total))
                         sys.stdout.flush()
+                    if progress_generator is not None:
+                        progress_generator.send(downloaded/total)
         if not suppress:
             sys.stdout.write('\n')
             sys.stdout.write('download complete\n')
