@@ -9,7 +9,7 @@ import pgeocode
 import platform
 
 name = "arlulaapi"
-sdk_version = "1.2.2"
+sdk_version = "1.3.0"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
@@ -205,10 +205,13 @@ class ArlulaSession:
     def order(self,
               id=None,
               eula=None,
-              trim=False,
+              trim=True,
               seats=None,
               webhooks=[],
               emails=[]):
+
+        if not trim :
+            raise ArlulaSessionError("""the `trim` keyword has been deprecated in the archive API""")
 
         url = self.baseURL+"/api/order/new"
 
@@ -217,7 +220,6 @@ class ArlulaSession:
         payload = json.dumps({
             "id": id,
             "eula": eula,
-            "trim": trim,
             "seats": seats,
             "webhooks": webhooks,
             "emails": emails
