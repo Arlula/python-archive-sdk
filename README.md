@@ -61,7 +61,6 @@ search_result = arlula_session.search(
 order = arlula_session.order(
     id=orderId,
     eula="",
-    trim=False,
     seats=1,
     webhooks=[...],
     emails=[...]
