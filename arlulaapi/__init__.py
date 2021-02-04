@@ -1,3 +1,5 @@
+import gevent.monkey as curious_george
+curious_george.patch_all(thread=False, select=False)
 import math
 import pgeocode
 import sys
@@ -9,8 +11,11 @@ import os
 import typing
 import warnings
 
+# Package Name
 name = "arlulaapi"
-sdk_version = "1.3.0"
+
+# User agent setting
+sdk_version = "1.4.0"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
@@ -44,15 +49,15 @@ class Session:
         return self.max_cloud
 
     def filter(self, r):
-        if isinstance(r, arlulacore.ArlulaObj) :
+        if isinstance(r, arlulacore.ArlulaObj):
             return r.cloud <= self.max_cloud
-        else :
+        else:
             return r['cloud'] <= self.max_cloud
 
     def search(self,
                start: typing.Optional[str] = None,
                end: typing.Optional[str] = None,
-               res: typing.Optional[float, str] = None,
+               res: typing.Optional[typing.Union[float, str]] = None,
                lat: typing.Optional[float] = None,
                long: typing.Optional[float] = None,
                north: typing.Optional[float] = None,
@@ -85,7 +90,6 @@ class Session:
             emails=emails
         )
 
-
     def get_order(self,
                   id: typing.Optional[str] = None):
         return self.orders.get(id=id)
@@ -114,7 +118,7 @@ class Session:
             url = self.session.baseURL+"/api/archive/search"
 
             querystring = {k: v for k, v in p.items()
-                            if v is not None or v == 0}
+                           if v is not None or v == 0}
 
             searches.append(grequests.get(
                 url,
@@ -124,35 +128,33 @@ class Session:
         # Send requests and wait for all to return
         response = grequests.map(
             searches, exception_handler=gsearch_exception)
-        
+
         # Aggregate results
         result = []
         for r in response:
             result.extend([arlulacore.ArlulaObj(x)
-                            for x in json.loads(r.text) if self.filter(x)])
+                           for x in json.loads(r.text) if self.filter(x)])
         return result
 
     def get_order_resources(self,
-                            id: typing.Optional[str]=None,
-                            folder: typing.Optional[str]=None,
-                            suppress: bool=False):
+                            id: typing.Optional[str] = None,
+                            folder: typing.Optional[str] = None,
+                            suppress: bool = False):
         if folder is None:
             raise arlulacore.ArlulaSessionError(
                 "You must specify a folder for the download")
 
         if not os.path.exists(folder):
             os.makedirs(folder)
-        
+
         # Get the list of resources
         res = self.get_order(id=id)
         counter = 1
         total = len(res.resources)
-        
+
         # For each resource, download using get_resource
         for r in res.resources:
             querystring = {"id": id}
-
-            headers = self.header
 
             if not suppress:
                 print("File {} of {}".format(counter, total))
@@ -179,29 +181,31 @@ class Session:
     def search_postcode(self,
                         start: typing.Optional[str] = None,
                         end: typing.Optional[str] = None,
-                        res: typing.Optional[float, str] = None,
+                        res: typing.Optional[typing.Union[float, str]] = None,
                         country: typing.Optional[str] = None,
-                        postcode: typing.Optional[str, int, typing.List[str, int]] = None,
-                        boxsize: typing.Optional[float]=None):
-        
+                        postcode: typing.Optional[typing.Union[str, int,
+                                                  typing.List[typing.Union[str, int]]]] = None,
+                        boxsize: typing.Optional[float] = None):
+
         # transformation constants
         dist_to_deg_lat = 110.574
         dist_to_deg_long_factor = 111.32
-        
+
         # Find country
         try:
             nomi = pgeocode.Nominatim(country)
         except ValueError:
-            raise arlulacore.ArlulaSessionError("Invalid country code {}".format(country))
-        
+            raise arlulacore.ArlulaSessionError(
+                "Invalid country code {}".format(country))
+
         if isinstance(postcode, str) or isinstance(postcode, int):
             postcode = [postcode]
-            
+
         # For each postcode, find coordinates using pgeocode
         data = nomi.query_postal_code(postcode)
         params = []
         pcs = [self.parse_postcode(d[1]) for d in data.iterrows()]
-        
+
         # Set parameters and search simultaneously across all postcodes
         if boxsize is None:
             params = [{'start': start, 'end': end, 'res': res,
@@ -213,8 +217,11 @@ class Session:
                        'west': pc['long']-boxsize/(math.cos(math.radians(pc['lat']))*dist_to_deg_long_factor),
                        'east': pc['long']+boxsize/(math.cos(math.radians(pc['lat']))*dist_to_deg_long_factor)} for pc in pcs]
         search_res = self.gsearch(params=params)
-        
+
         # Return results
         if len(pcs) == 1:
             return arlulacore.ArlulaObj({'location': pcs[0], 'data': search_res[0]})
         return [arlulacore.ArlulaObj({'location': pcs[i], 'data': search_res[i]}) for i in range(0, len(pcs))]
+
+# Make compatible with old versions
+ArlulaSession = Session
