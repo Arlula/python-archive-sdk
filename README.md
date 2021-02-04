@@ -17,12 +17,8 @@ Instantiate an ArlulaSession object using your API credentials as below. This wi
 import arlulaapi
 
 """opening a session"""
-arlula_session = arlulaapi.ArlulaSession(key, secret)
-# Call required methods
-
-"""using a context manager"""
-with arlulaapi.ArlulaSession(key, secret) as arlula_session :
-    # Call required methods
+arlula_session = arlulaapi.Session(key, secret)
+# Call required method
 ```
 
 ## Utilities
@@ -154,17 +150,4 @@ res = arlula_session.search_postcode(
 )
 print(res[2].location.name) # prints "Melbourne"
 search_result = res[2].data # Melbourne search result
-```
-
-## Advanced
-**Allow async features**
-
-Async features can be turned on at instantiation for better performance in gsearch.
-```python
-arlula_session = arlulaapi.ArlulaSession(key, secret, allow_async=True)
-```
-Note that it is up to the user to monkey-patch with the gevent package, i.e. including the following code at the very top of their python file:
-```python
-from gevent import monkey as curious_george
-curious_george.patch_all(thread=False, select=False)
 ```
