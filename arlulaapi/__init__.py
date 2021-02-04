@@ -1,34 +1,26 @@
-import base64
-import requests
-import json
-import sys
-import warnings
-import os
+import gevent.monkey as curious_george
+curious_george.patch_all(thread=False, select=False)
 import math
 import pgeocode
+import sys
 import platform
+import arlulacore
+import grequests
+import json
+import os
+import typing
+import warnings
 
+# Package Name
 name = "arlulaapi"
-sdk_version = "1.3.0"
+
+# User agent setting
+sdk_version = "1.4.0"
 py_version = sys.version.split(' ')[0]
 os_version = platform.platform()
 def_ua = "archive-sdk " + \
     sdk_version + " python " + py_version + " OS " + os_version
 
-# Object generator that converts returned JSON into a Python object
-
-
-class ArlulaObj(object):
-    def __init__(self, d):
-        for a, b in d.items():
-            if isinstance(b, (list, tuple)):
-                setattr(self, a, [ArlulaObj(x) if isinstance(
-                    x, dict) else x for x in b])
-            else:
-                setattr(self, a, ArlulaObj(b) if isinstance(b, dict) else b)
-
-    def __repr__(self):
-        return str(['{}: {}'.format(attr, value) for attr, value in self.__dict__.items()])[1:-1].replace('\'', '')
 
 # Exception when group searching
 
@@ -36,58 +28,20 @@ class ArlulaObj(object):
 def gsearch_exception(r, e):
     return("request failed")
 
-# Custom Exception Class
 
+class Session:
 
-class ArlulaSessionError(Exception):
-    def __init__(self, value):
-        self.value = value
-
-    def __str__(self):
-        return self.value
-
-# Custom Warning Class
-
-
-class ArlulaSessionWarning(Warning):
-    pass
-
-# The ArlulaSession code
-
-
-class ArlulaSession:
-
-    def __init__(self, key, secret, allow_async=False, user_agent=def_ua):
-        # Encode the key and secret
-        def atob(x): return x.encode('utf-8')
-        self.token = base64.b64encode(atob(
-            key + ':' + secret)).decode('utf-8')
-        self.header = {
-            'Authorization': "Basic "+self.token,
-            'User-Agent': user_agent
-        }
-        self.baseURL = "https://api.arlula.com"
+    def __init__(self, key, secret, user_agent=def_ua):
+        self.session = arlulacore.Session(key,
+                                          secret,
+                                          user_agent=user_agent)
+        self.archive = arlulacore.Archive(self.session)
+        self.orders = arlulacore.Orders(self.session)
         self.max_cloud = 100
-        # Supplier max bounds on cloud values
-        self.validate_creds()
-        self.allow_async = allow_async
-
-    # Enables use of `with` keyword
-    def __enter__(self):
-        return self
-
-    # Enables use of `with` keyword
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    # Removes sensitive information
-    def close(self):
-        self.token = None
-        self.header = None
 
     def set_max_cloud(self, val):
         if (val < 0 or val > 100):
-            raise ArlulaSessionError(
+            raise arlulacore.ArlulaSessionError(
                 "Max cloud value must be between 0 and 100")
         self.max_cloud = val
 
@@ -95,198 +49,112 @@ class ArlulaSession:
         return self.max_cloud
 
     def filter(self, r):
-        if r['supplier'] == "":
-            return False
-        return r['cloud'] <= self.max_cloud
-
-    def validate_creds(self):
-        url = self.baseURL+"/api/test"
-
-        headers = self.header
-
-        response = requests.request("GET", url, headers=headers)
-
-        if response.status_code != 200:
-            raise ArlulaSessionError(response.text)
+        if isinstance(r, arlulacore.ArlulaObj):
+            return r.cloud <= self.max_cloud
+        else:
+            return r['cloud'] <= self.max_cloud
 
     def search(self,
-               start=None,
-               end=None,
-               res=None,
-               lat=None,
-               long=None,
-               north=None,
-               south=None,
-               east=None,
-               west=None,
-               params=None):
-        url = self.baseURL+"/api/search"
+               start: typing.Optional[str] = None,
+               end: typing.Optional[str] = None,
+               res: typing.Optional[typing.Union[float, str]] = None,
+               lat: typing.Optional[float] = None,
+               long: typing.Optional[float] = None,
+               north: typing.Optional[float] = None,
+               south: typing.Optional[float] = None,
+               east: typing.Optional[float] = None,
+               west: typing.Optional[float] = None):
+        return [x for x in self.archive.search(
+                start=start,
+                end=end,
+                res=res,
+                lat=lat,
+                long=long,
+                north=north,
+                south=south,
+                east=east,
+                west=west)
+                if self.filter(x)]
 
-        if params is None:
-            querystring = {"start": start, "end": end,
-                           "res": res, "lat": lat, "long": long,
-                           "north": north, "south": south, "east": east, "west": west}
-        else:
-            querystring = params
+    def order(self,
+              id: typing.Optional[str] = None,
+              eula: typing.Optional[str] = None,
+              seats: typing.Optional[int] = None,
+              webhooks: typing.List[str] = [],
+              emails: typing.List[str] = []):
+        return self.archive.order(
+            id=id,
+            eula=eula,
+            seats=seats,
+            webhooks=webhooks,
+            emails=emails
+        )
 
-        querystring = {k: v for k, v in querystring.items()
-                       if v is not None or v == 0}
+    def get_order(self,
+                  id: typing.Optional[str] = None):
+        return self.orders.get(id=id)
 
-        headers = self.header
-        response = requests.request(
-            "GET", url, headers=headers, params=querystring)
-        if response.status_code != 200:
-            raise ArlulaSessionError(response.text)
-        else:
-            return [ArlulaObj(x) for x in json.loads(response.text) if self.filter(x)]
+    def list_orders(self):
+        return self.orders.list()
 
+    def get_resource(self,
+                     id: typing.Optional[str] = None,
+                     filepath: typing.Optional[str] = None,
+                     suppress: bool = False,
+                     # an optional generator that yields float or None
+                     progress_generator: typing.Optional[typing.Generator[typing.Optional[float], None, None]] = None):
+        self.orders.get_resource(
+            id=id,
+            filepath=filepath,
+            suppress=suppress,
+            progress_generator=progress_generator
+        )
+
+    # Asynchronously retrieves multiple searches and aggregates results
     def gsearch(self,
                 params):
         searches = []
-        if self.allow_async:
-            import grequests
-            for p in params:
-                url = self.baseURL+"/api/search"
+        for p in params:
+            url = self.session.baseURL+"/api/archive/search"
 
-                querystring = {k: v for k, v in p.items()
-                               if v is not None or v == 0}
+            querystring = {k: v for k, v in p.items()
+                           if v is not None or v == 0}
 
-                headers = self.header
+            searches.append(grequests.get(
+                url,
+                headers=self.session.header,
+                params=querystring))
 
-                searches.append(grequests.get(
-                    url, headers=headers, params=querystring))
+        # Send requests and wait for all to return
+        response = grequests.map(
+            searches, exception_handler=gsearch_exception)
 
-            response = grequests.map(
-                searches, exception_handler=gsearch_exception)
-            result = []
-            for r in response:
-                result.append([ArlulaObj(x)
-                               for x in json.loads(r.text) if self.filter(x)])
-            return result
-        else:
-            # Non-async. Just calls 'search' sequentially
-            responses = []
-            for p in params:
-                responses.append(self.search(params=p))
-            return responses
-
-    def get_order(self,
-                  id=""):
-
-        url = self.baseURL+"/api/order/get"
-
-        querystring = {"id": id}
-
-        headers = self.header
-
-        response = requests.request(
-            "GET", url, headers=headers, params=querystring)
-
-        if response.status_code != 200:
-            raise ArlulaSessionError(response.text)
-        else:
-            return ArlulaObj(json.loads(response.text))
-
-    def list_orders(self):
-
-        url = self.baseURL+"/api/order/list"
-
-        headers = self.header
-
-        response = requests.request(
-            "GET", url, headers=headers)
-
-        if response.status_code != 200:
-            raise ArlulaSessionError(response.text)
-        else:
-            return [ArlulaObj(json.loads(str(r).replace("\'", "\"")))
-                    for r in eval(response.text, {'__builtins__': None}, {})]
-
-    def order(self,
-              id=None,
-              eula=None,
-              trim=True,
-              seats=None,
-              webhooks=[],
-              emails=[]):
-
-        if not trim :
-            raise ArlulaSessionError("""the `trim` keyword has been deprecated in the archive API""")
-
-        url = self.baseURL+"/api/order/new"
-
-        headers = self.header
-
-        payload = json.dumps({
-            "id": id,
-            "eula": eula,
-            "seats": seats,
-            "webhooks": webhooks,
-            "emails": emails
-        })
-
-        response = requests.request("POST", url, data=payload, headers=headers)
-
-        if response.status_code != 200:
-            raise ArlulaSessionError(response.text)
-        else:
-            return ArlulaObj(json.loads(response.text))
-
-    def get_resource(self,
-                     id="",
-                     filepath="",
-                     suppress=False,
-                     progress_generator=None):
-        if filepath == "":
-            raise ArlulaSessionError(
-                "You must specify a filepath for the download")
-        if progress_generator is not None :
-            next(progress_generator)
-        with open(filepath, 'wb') as f:
-            url = self.baseURL + "/api/order/resource/get"
-            querystring = {"id": id}
-
-            headers = self.header
-            response = requests.request(
-                "GET", url, headers=headers, params=querystring,  stream=True)
-            total = response.headers.get('content-length')
-
-            if response.status_code != 200:
-                raise ArlulaSessionError(response.text)
-
-            if total is None:
-                f.write(response.content)
-            else:
-                downloaded = 0
-                total = int(total)
-                for data in response.iter_content(chunk_size=max(int(total/1000), 1024*1024)):
-                    downloaded += len(data)
-                    f.write(data)
-                    done = int(50*downloaded/total)
-                    if not suppress:
-                        sys.stdout.write('\r[{}{}]{:.2%}'.format(
-                            '█' * done, '.' * (50-done), downloaded/total))
-                        sys.stdout.flush()
-                    if progress_generator is not None:
-                        progress_generator.send(downloaded/total)
-        if not suppress:
-            sys.stdout.write('\n')
-            sys.stdout.write('download complete\n')
+        # Aggregate results
+        result = []
+        for r in response:
+            result.extend([arlulacore.ArlulaObj(x)
+                           for x in json.loads(r.text) if self.filter(x)])
+        return result
 
     def get_order_resources(self,
-                            id="",
-                            folder="",
-                            suppress=False):
+                            id: typing.Optional[str] = None,
+                            folder: typing.Optional[str] = None,
+                            suppress: bool = False):
+        if folder is None:
+            raise arlulacore.ArlulaSessionError(
+                "You must specify a folder for the download")
+
         if not os.path.exists(folder):
             os.makedirs(folder)
+
+        # Get the list of resources
         res = self.get_order(id=id)
         counter = 1
         total = len(res.resources)
-        for r in res.resources:
-            url = self.baseURL + "/api/order/resource/get"
-            querystring = {"id": id}
 
-            headers = self.header
+        # For each resource, download using get_resource
+        for r in res.resources:
+            querystring = {"id": id}
 
             if not suppress:
                 print("File {} of {}".format(counter, total))
@@ -303,31 +171,42 @@ class ArlulaSession:
 
     def parse_postcode(self, res):
         if math.isnan(res.latitude):
-            raise ArlulaSessionError(
+            raise arlulacore.ArlulaSessionError(
                 "Could not find postcode {}".format(res.postal_code))
         if res.accuracy >= 5:
             warnings.warn(
-                "Postcode {} lat/long could be inaccurate".format(res.postal_code), ArlulaSessionWarning)
+                "Postcode {} lat/long could be inaccurate".format(res.postal_code), arlulacore.ArlulaSessionWarning)
         return {'postcode': res.postal_code, 'lat': res.latitude, 'long': res.longitude, 'name': res.place_name}
 
     def search_postcode(self,
-                        start=None,
-                        end=None,
-                        res=None,
-                        country=None,
-                        postcode=None,
-                        boxsize=None):
+                        start: typing.Optional[str] = None,
+                        end: typing.Optional[str] = None,
+                        res: typing.Optional[typing.Union[float, str]] = None,
+                        country: typing.Optional[str] = None,
+                        postcode: typing.Optional[typing.Union[str, int,
+                                                  typing.List[typing.Union[str, int]]]] = None,
+                        boxsize: typing.Optional[float] = None):
+
+        # transformation constants
         dist_to_deg_lat = 110.574
         dist_to_deg_long_factor = 111.32
+
+        # Find country
         try:
             nomi = pgeocode.Nominatim(country)
         except ValueError:
-            raise ArlulaSessionError("Invalid country code {}".format(country))
+            raise arlulacore.ArlulaSessionError(
+                "Invalid country code {}".format(country))
+
         if isinstance(postcode, str) or isinstance(postcode, int):
             postcode = [postcode]
+
+        # For each postcode, find coordinates using pgeocode
         data = nomi.query_postal_code(postcode)
         params = []
         pcs = [self.parse_postcode(d[1]) for d in data.iterrows()]
+
+        # Set parameters and search simultaneously across all postcodes
         if boxsize is None:
             params = [{'start': start, 'end': end, 'res': res,
                        'lat': pc['lat'], 'long': pc['long']} for pc in pcs]
@@ -338,6 +217,11 @@ class ArlulaSession:
                        'west': pc['long']-boxsize/(math.cos(math.radians(pc['lat']))*dist_to_deg_long_factor),
                        'east': pc['long']+boxsize/(math.cos(math.radians(pc['lat']))*dist_to_deg_long_factor)} for pc in pcs]
         search_res = self.gsearch(params=params)
+
+        # Return results
         if len(pcs) == 1:
-            return ArlulaObj({'location': pcs[0], 'data': search_res[0]})
-        return [ArlulaObj({'location': pcs[i], 'data': search_res[i]}) for i in range(0, len(pcs))]
+            return arlulacore.ArlulaObj({'location': pcs[0], 'data': search_res[0]})
+        return [arlulacore.ArlulaObj({'location': pcs[i], 'data': search_res[i]}) for i in range(0, len(pcs))]
+
+# Make compatible with old versions
+ArlulaSession = Session
